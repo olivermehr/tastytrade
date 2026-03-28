@@ -17,17 +17,18 @@ const WEBSOCKET_URL: &str = "wss://streamer.tastyworks.com";
 /// Handles environment variables and logger setup
 #[derive(DebugPretty, DisplaySimple, Clone, Serialize, Deserialize)]
 pub struct TastyTradeConfig {
-    /// TastyTrade API username/email
-    pub username: String,
-    /// TastyTrade API password
+    /// TastyTrade Oauth Client ID
+    pub client_id: String,
+    /// TastyTrade Oauth Client Secret
     #[serde(skip_serializing, default)]
-    pub password: String,
+    pub client_secret: String,
+    /// TastyTrade Oauth Refresh Token
+    #[serde(skip_serializing, default)]
+    pub refresh_token: String,
     /// Whether to use demo/cert environment
     pub use_demo: bool,
     /// Log level: "INFO", "DEBUG", "WARN", "ERROR", "TRACE"
     pub log_level: String,
-    /// Whether to remember login session
-    pub remember_me: bool,
     /// Base URL for API requests
     pub base_url: String,
     /// Websocket URL.
@@ -37,11 +38,11 @@ pub struct TastyTradeConfig {
 impl Default for TastyTradeConfig {
     fn default() -> Self {
         Self {
-            username: String::new(),
-            password: String::new(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            refresh_token: String::new(),
             use_demo: false,
             log_level: "INFO".to_string(),
-            remember_me: false,
             base_url: BASE_URL.to_string(),
             websocket_url: WEBSOCKET_URL.to_string(),
         }
@@ -66,27 +67,24 @@ impl TastyTradeConfig {
     /// Initialize a new configuration from environment variables
     pub fn from_env() -> Self {
         dotenv::dotenv().ok();
-        let username = env::var("TASTYTRADE_USERNAME").unwrap_or_default();
-        let password = env::var("TASTYTRADE_PASSWORD").unwrap_or_default();
+        let client_id = env::var("TASTYTRADE_CLIENT_ID").unwrap_or_default();
+        let client_secret = env::var("TASTYTRADE_CLIENT_SECRET").unwrap_or_default();
         let use_demo = env::var("TASTYTRADE_USE_DEMO")
             .unwrap_or_else(|_| "false".to_string())
             .parse()
             .unwrap_or(false);
         let log_level = env::var("LOGLEVEL").unwrap_or_else(|_| "INFO".to_string());
-        let remember_me = env::var("TASTYTRADE_REMEMBER_ME")
-            .unwrap_or_else(|_| "false".to_string())
-            .parse()
-            .unwrap_or(false);
+        let refresh_token = env::var("TASTYTRADE_REFRESH_TOKEN").unwrap_or_default();
 
         // Initialize logger with the specified log level
         setup_logger_with_level(&log_level);
 
         Self {
-            username,
-            password,
+            client_id,
+            client_secret,
+            refresh_token,
             use_demo,
             log_level,
-            remember_me,
             base_url: if use_demo {
                 BASE_DEMO_URL.to_string()
             } else {
@@ -120,7 +118,9 @@ impl TastyTradeConfig {
 
     /// Check if the configuration has valid credentials
     pub fn has_valid_credentials(&self) -> bool {
-        !self.username.is_empty() && !self.password.is_empty()
+        !self.client_id.is_empty()
+            && !self.client_secret.is_empty()
+            && !self.refresh_token.is_empty()
     }
 
     /// Creates a TastyTrade client from the configuration
@@ -144,11 +144,11 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = TastyTradeConfig::default();
-        assert!(config.username.is_empty());
-        assert!(config.password.is_empty());
+        assert!(config.client_id.is_empty());
+        assert!(config.client_secret.is_empty());
+        assert!(config.refresh_token.is_empty());
         assert!(!config.use_demo);
         assert_eq!(config.log_level, "INFO");
-        assert!(!config.remember_me);
     }
 
     #[test]
@@ -156,27 +156,27 @@ mod tests {
     fn test_config_from_env() {
         // Set environment variables for testing
         unsafe {
-            env::set_var("TASTYTRADE_USERNAME", "test_user");
-            env::set_var("TASTYTRADE_PASSWORD", "test_pass");
+            env::set_var("TASTYTRADE_CLIENT_ID", "test_client_id");
+            env::set_var("TASTYTRADE_CLIENT_SECRET", "test_client_secret");
+            env::set_var("TASTYTRADE_REFRESH_TOKEN", "test_refresh_token");
             env::set_var("TASTYTRADE_USE_DEMO", "true");
             env::set_var("LOGLEVEL", "DEBUG");
-            env::set_var("TASTYTRADE_REMEMBER_ME", "true");
         }
         let config = TastyTradeConfig::from_env();
-        assert_eq!(config.username, "test_user");
-        assert_eq!(config.password, "test_pass");
+        assert_eq!(config.client_id, "test_client_id");
+        assert_eq!(config.client_secret, "test_client_secret");
+        assert_eq!(config.refresh_token, "test_refresh_token");
         assert!(config.use_demo);
-        assert!(config.remember_me);
         assert_eq!(config.base_url, BASE_DEMO_URL.to_string());
         assert_eq!(config.websocket_url, WEBSOCKET_DEMO_URL.to_string());
 
         unsafe {
             // Clean up environment
-            env::remove_var("TASTYTRADE_USERNAME");
-            env::remove_var("TASTYTRADE_PASSWORD");
+            env::remove_var("TASTYTRADE_CLIENT_ID");
+            env::remove_var("TASTYTRADE_CLIENT_SECRET");
+            env::remove_var("TASTYTRADE_REFRESH_TOKEN");
             env::remove_var("TASTYTRADE_USE_DEMO");
             env::remove_var("LOGLEVEL");
-            env::remove_var("TASTYTRADE_REMEMBER_ME");
         }
     }
 
@@ -185,41 +185,48 @@ mod tests {
         let mut config = TastyTradeConfig::default();
         assert!(!config.has_valid_credentials());
 
-        config.username = "user".to_string();
+        config.client_id = "client_id".to_string();
         assert!(!config.has_valid_credentials());
 
-        config.password = "pass".to_string();
+        config.client_secret = "client_secret".to_string();
+        assert!(!config.has_valid_credentials());
+
+        config.refresh_token = "refresh_token".to_string();
         assert!(config.has_valid_credentials());
     }
 
     #[test]
     fn test_serialize_deserialize() {
         let config = TastyTradeConfig {
-            username: "test_user".to_string(),
-            password: "test_pass".to_string(),
+            client_id: "test_client_id".to_string(),
+            client_secret: "test_client_secret".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
             use_demo: true,
             log_level: "DEBUG".to_string(),
-            remember_me: true,
             base_url: BASE_DEMO_URL.to_string(),
             websocket_url: WEBSOCKET_DEMO_URL.to_string(),
         };
 
         let json = serde_json::to_string(&config).unwrap();
 
-        // Password should be skipped during serialization
-        assert!(!json.contains("test_pass"));
+        // Client secret should be skipped during serialization
+        assert!(!json.contains("test_client_secret"));
+        // Refresh token should be skipped during serialization
+        assert!(!json.contains("test_refresh_token"));
 
-        // Create a new config with an empty password
+        // Create a new config with an empty client secret
         let mut deserialized: TastyTradeConfig = serde_json::from_str(&json).unwrap();
 
-        // Manually set the password since it's not in the JSON
-        deserialized.password = "test_pass".to_string();
+        // Manually set the client secret since it's not in the JSON
+        deserialized.client_secret = "test_client_secret".to_string();
+        // Manually set the refresh token since it's not in the JSON
+        deserialized.refresh_token = "test_refresh_token".to_string();
 
-        assert_eq!(config.username, deserialized.username);
-        assert_eq!(config.password, deserialized.password);
+        assert_eq!(config.client_id, deserialized.client_id);
+        assert_eq!(config.client_secret, deserialized.client_secret);
+        assert_eq!(config.refresh_token, deserialized.refresh_token);
         assert_eq!(config.use_demo, deserialized.use_demo);
         assert_eq!(config.log_level, deserialized.log_level);
-        assert_eq!(config.remember_me, deserialized.remember_me);
     }
 
     #[test]
@@ -227,36 +234,36 @@ mod tests {
     fn test_config_from_env_demo_false() {
         // Clean up any existing environment variables first
         unsafe {
-            env::remove_var("TASTYTRADE_USERNAME");
-            env::remove_var("TASTYTRADE_PASSWORD");
+            env::remove_var("TASTYTRADE_CLIENT_ID");
+            env::remove_var("TASTYTRADE_CLIENT_SECRET");
+            env::remove_var("TASTYTRADE_REFRESH_TOKEN");
             env::remove_var("TASTYTRADE_USE_DEMO");
             env::remove_var("LOGLEVEL");
-            env::remove_var("TASTYTRADE_REMEMBER_ME");
         }
 
         // Set environment variables for testing
         unsafe {
-            env::set_var("TASTYTRADE_USERNAME", "test_user");
-            env::set_var("TASTYTRADE_PASSWORD", "test_pass");
+            env::set_var("TASTYTRADE_CLIENT_ID", "test_client_id");
+            env::set_var("TASTYTRADE_CLIENT_SECRET", "test_client_secret");
+            env::set_var("TASTYTRADE_REFRESH_TOKEN", "test_refresh_token");
             env::set_var("TASTYTRADE_USE_DEMO", "false");
             env::set_var("LOGLEVEL", "DEBUG");
-            env::set_var("TASTYTRADE_REMEMBER_ME", "false");
         }
         let config = TastyTradeConfig::from_env();
-        assert_eq!(config.username, "test_user");
-        assert_eq!(config.password, "test_pass");
+        assert_eq!(config.client_id, "test_client_id");
+        assert_eq!(config.client_secret, "test_client_secret");
+        assert_eq!(config.refresh_token, "test_refresh_token");
         assert!(!config.use_demo);
-        assert!(!config.remember_me);
         assert_eq!(config.base_url, BASE_URL.to_string());
         assert_eq!(config.websocket_url, WEBSOCKET_URL.to_string());
 
         unsafe {
             // Clean up environment
-            env::remove_var("TASTYTRADE_USERNAME");
-            env::remove_var("TASTYTRADE_PASSWORD");
+            env::remove_var("TASTYTRADE_CLIENT_ID");
+            env::remove_var("TASTYTRADE_CLIENT_SECRET");
+            env::remove_var("TASTYTRADE_REFRESH_TOKEN");
             env::remove_var("TASTYTRADE_USE_DEMO");
             env::remove_var("LOGLEVEL");
-            env::remove_var("TASTYTRADE_REMEMBER_ME");
         }
     }
 }

@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
-    info!("Attempting to login with username: {}", config.username);
+    info!("Attempting to login with username: {}", config.client_id);
     info!("Using demo environment: {}", config.use_demo);
 
     let tasty = match TastyTrade::login(&config).await {

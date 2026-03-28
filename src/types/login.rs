@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 #[derive(DebugPretty, DisplaySimple, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct LoginCredentials {
-    /// The username for login.
-    pub login: String,
-    /// The password for login.
-    pub password: String,
-    /// A flag indicating whether to remember the login.
-    pub remember_me: bool,
+    /// The grant type for login.
+    pub grant_type: String,
+    /// The client secret for login.
+    pub client_secret: String,
+    /// The refresh token for login.
+    pub refresh_token: String,
 }
 
 #[allow(dead_code)]
@@ -47,7 +47,5 @@ pub struct LoginResponse {
     /// The user information associated with the login.
     pub user: LoginResponseUser,
     /// The session token.
-    pub session_token: String,
-    /// The remember token (optional).
-    pub remember_token: Option<String>,
+    pub access_token: String,
 }

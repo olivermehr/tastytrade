@@ -16,7 +16,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    debug!("Attempting to login with username: {}", config.username);
+    debug!("Attempting to login with client ID: {}", config.client_id);
     debug!("Using demo environment: {}", config.use_demo);
     debug!("Base URL: {}", config.base_url);
 

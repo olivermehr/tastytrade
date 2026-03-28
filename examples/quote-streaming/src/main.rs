@@ -17,7 +17,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    println!("Attempting to login with username: {}", config.username);
+    println!("Attempting to login with username: {}", config.client_id);
     println!("Using demo environment: {}", config.use_demo);
 
     let tasty = match TastyTrade::login(&config).await {

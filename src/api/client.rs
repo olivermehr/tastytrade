@@ -20,7 +20,7 @@ use tracing::debug;
 #[derive(Debug, Clone)]
 pub struct TastyTrade {
     pub(crate) client: reqwest::Client,
-    pub(crate) session_token: String,
+    pub(crate) access_token: String,
     pub(crate) config: TastyTradeConfig,
 }
 
@@ -68,9 +68,8 @@ impl<T: DeserializeOwned + Serialize + std::fmt::Debug> FromTastyResponse<Items<
 impl TastyTrade {
     pub async fn login(config: &TastyTradeConfig) -> TastyResult<Self> {
         let creds = Self::do_login_request(
-            &config.username,
-            &config.password,
-            config.remember_me,
+            &config.client_secret,
+            &config.refresh_token,
             &config.base_url,
         )
         .await?;
@@ -80,7 +79,7 @@ impl TastyTrade {
 
         Ok(Self {
             client,
-            session_token: creds.session_token,
+            access_token: creds.access_token,
             config: config.clone(),
         })
     }
@@ -90,7 +89,7 @@ impl TastyTrade {
 
         headers.insert(
             header::AUTHORIZATION,
-            HeaderValue::from_str(&creds.session_token).unwrap(),
+            HeaderValue::from_str(&creds.access_token).unwrap(),
         );
         headers.insert(
             header::CONTENT_TYPE,
@@ -108,21 +107,20 @@ impl TastyTrade {
     }
 
     async fn do_login_request(
-        login: &str,
-        password: &str,
-        remember_me: bool,
+        client_secret: &str,
+        refresh_token: &str,
         base_url: &str,
     ) -> TastyResult<LoginResponse> {
         let client = reqwest::Client::default();
 
         let resp = client
-            .post(format!("{base_url}/sessions"))
+            .post(format!("{base_url}/oauth/token"))
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::USER_AGENT, "tastytrade")
             .json(&LoginCredentials {
-                login: login.to_string(),
-                password: password.to_string(),
-                remember_me,
+                grant_type: "refresh_token".to_string(),
+                client_secret: client_secret.to_string(),
+                refresh_token: refresh_token.to_string(),
             })
             .send()
             .await?;
@@ -266,7 +264,7 @@ impl TastyTrade {
     }
 
     pub async fn create_quote_streamer(&self) -> TastyResult<QuoteStreamer> {
-        debug!("Session token: {}", self.session_token);
+        debug!("Access token: {}", self.access_token);
         QuoteStreamer::connect(self).await
     }
 }

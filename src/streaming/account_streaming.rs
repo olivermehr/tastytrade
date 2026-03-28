@@ -225,7 +225,7 @@ impl AccountStreamer {
     ///
     /// This function can return a variety of errors related to network communication, authentication, or streaming setup. See the `TastyTradeError` enum for more details.
     pub async fn connect(tasty: &TastyTrade) -> TastyResult<AccountStreamer> {
-        let token = &tasty.session_token;
+        let token = &tasty.access_token;
         let (event_sender, event_receiver) = flume::unbounded();
         let (action_sender, action_receiver): (
             flume::Sender<HandlerAction>,
