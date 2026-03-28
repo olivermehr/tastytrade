@@ -44,8 +44,10 @@ pub struct LoginResponseUser {
 #[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct LoginResponse {
-    /// The user information associated with the login.
-    pub user: LoginResponseUser,
-    /// The session token.
+    /// The access token.
     pub access_token: String,
+    /// The token type.
+    pub token_type: String,
+    /// The expiration time in seconds.
+    pub expires_in: u32,
 }
