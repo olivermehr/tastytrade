@@ -89,7 +89,7 @@ impl TastyTrade {
 
         headers.insert(
             header::AUTHORIZATION,
-            HeaderValue::from_str(&creds.access_token).unwrap(),
+            HeaderValue::from_str(&format!("Bearer {}", creds.access_token)).unwrap(),
         );
         headers.insert(
             header::CONTENT_TYPE,
@@ -97,7 +97,7 @@ impl TastyTrade {
         );
         headers.insert(
             header::USER_AGENT,
-            HeaderValue::from_str("tastytrade").unwrap(),
+            HeaderValue::from_str(&format!("tastytrade/{}", env!("CARGO_PKG_VERSION"))).unwrap(),
         );
 
         ClientBuilder::new()
@@ -116,7 +116,10 @@ impl TastyTrade {
         let resp = client
             .post(format!("{base_url}/oauth/token"))
             .header(header::CONTENT_TYPE, "application/json")
-            .header(header::USER_AGENT, "tastytrade")
+            .header(
+                header::USER_AGENT,
+                format!("tastytrade/{}", env!("CARGO_PKG_VERSION")),
+            )
             .json(&LoginCredentials {
                 grant_type: "refresh_token".to_string(),
                 client_secret: client_secret.to_string(),
@@ -128,13 +131,7 @@ impl TastyTrade {
             //.inspect_json::<TastyApiResponse<LoginResponse>, TastyError>(|text| println!("{text}"))
             .json()
             .await?;
-        let response = match json {
-            TastyApiResponse::Success(s) => Ok(s),
-            TastyApiResponse::Error { error } => Err(error),
-        }?
-        .data;
-
-        Ok(response)
+        Ok(json)
     }
 
     pub async fn get_with_query<T, R, U>(&self, url: U, query: &[(&str, &str)]) -> TastyResult<R>

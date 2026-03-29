@@ -225,7 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "      - Stops Trading At: {}",
                                 specific_option.stops_trading_at
                             );
-                            debug!("      - Expires At: {}", specific_option.expires_at);
+                            debug!("      - Expires At: {:?}", specific_option.expires_at);
                         }
                         Err(e) => {
                             error!(

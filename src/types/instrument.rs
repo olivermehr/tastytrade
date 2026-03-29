@@ -447,7 +447,7 @@ pub struct EquityOption {
     /// The number of days to expiration (can be negative for expired options).
     pub days_to_expiration: i64,
     /// The date and time when the option expires, formatted as a string.
-    pub expires_at: String,
+    pub expires_at: Option<String>,
     /// Whether the option is closing only.
     pub is_closing_only: bool,
     /// The streamer symbol for the future option.

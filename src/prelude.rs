@@ -74,7 +74,7 @@ pub use crate::utils::{
 };
 
 // Re-export login types
-pub use crate::types::login::{LoginCredentials, LoginResponse, LoginResponseUser};
+pub use crate::types::login::{LoginCredentials, LoginResponse};
 
 // Re-export event types
 pub use crate::types::event::TastyEvent;

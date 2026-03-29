@@ -227,8 +227,7 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             ev = quote_sub.get_event() => {
-                if let Ok(Event { sym, data }) = ev {
-                    if let Some(record) = app.get_record(DxFeedSymbol(sym)) {
+                if let Ok(Event { sym, data }) = ev  && let Some(record) = app.get_record(DxFeedSymbol(sym)) {
                         match data {
                             EventData::Quote(quote) => {
                                 record.current = Decimal::from_f64((quote.bid_price + quote.ask_price) / 2.0).unwrap_or_default();
@@ -242,29 +241,23 @@ async fn main() -> Result<()> {
                             _ => {}
                         }
                     }
-                }
             }
             ev = account_streamer.get_event() => {
-                if let Ok(AccountEvent::AccountMessage(msg)) = ev {
-                    if let AccountMessage::AccountBalance(bal) = *msg {
-                        app.balances.insert(bal.account_number.0, bal.cash_balance);
-                    }
+                if let Ok(AccountEvent::AccountMessage(msg)) = ev  && let AccountMessage::AccountBalance(bal) = *msg {
+                    app.balances.insert(bal.account_number.0, bal.cash_balance);
                 }
             }
             maybe_event = keyboard_event_stream.next() => {
                 match maybe_event {
                     Some(Ok(event)) => {
-                        if let event::Event::Key(key) = event {
-                            if key.kind == KeyEventKind::Press {
-                                match key.code {
-                                    KeyCode::Char('q') => break,
-                                    KeyCode::Down => app.next(),
-                                    KeyCode::Up => app.previous(),
-                                    KeyCode::Char(' ') => app.toggle_group(),
-                                    _ => {}
-                                }
+                        if let event::Event::Key(key) = event && key.kind == KeyEventKind::Press {
+                            match key.code {
+                                KeyCode::Char('q') => break,
+                                KeyCode::Down => app.next(),
+                                KeyCode::Up => app.previous(),
+                                KeyCode::Char(' ') => app.toggle_group(),
+                                _ => {}
                             }
-
                         }
                     }
                     Some(Err(e)) => println!("Error: {:?}\r", e),

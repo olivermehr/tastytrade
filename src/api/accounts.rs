@@ -29,7 +29,6 @@ pub struct AccountDetails {
     pub day_trader_status: bool,
     pub is_firm_error: bool,
     pub is_firm_proprietary: bool,
-    pub is_test_drive: bool,
     pub margin_or_cash: String,
     pub is_foreign: bool,
     pub funding_date: Option<String>,
