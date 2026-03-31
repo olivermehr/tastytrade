@@ -78,3 +78,6 @@ pub use crate::types::login::{LoginCredentials, LoginResponse};
 
 // Re-export event types
 pub use crate::types::event::TastyEvent;
+
+// Re-export decimal type
+pub use rust_decimal::Decimal;
