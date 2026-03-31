@@ -51,13 +51,13 @@ async fn main() {
     let mut quote_sub = streamer.create_sub(dxfeed::DXF_ET_QUOTE);
     let market_data = tasty
         .get_market_data(MarketDataRequest {
-            equity: Some(&["AAPL"]),
+            index: Some(&["VIX"]),
             ..Default::default()
         })
         .await
         .unwrap();
 
-    println!("AAPL data: {:?}", market_data);
+    println!("VIX data: {:?}", market_data);
 
     // Subscribe to SPX symbol
     let symbols = [Symbol::from("AAPL")];

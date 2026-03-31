@@ -78,6 +78,8 @@ pub enum InstrumentType {
     LiquidityPool,
     /// Represents a warrant instrument.
     Warrant,
+    /// Represents an index instrument.
+    Index,
 }
 
 impl Display for InstrumentType {
@@ -93,6 +95,7 @@ impl Display for InstrumentType {
             InstrumentType::FixedIncomeSecurity => write!(f, "Fixed Income Security"),
             InstrumentType::LiquidityPool => write!(f, "Liquidity Pool"),
             InstrumentType::Warrant => write!(f, "Warrant"),
+            InstrumentType::Index => write!(f, "Index"),
         }
     }
 }

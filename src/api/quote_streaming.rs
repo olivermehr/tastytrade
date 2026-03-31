@@ -93,6 +93,7 @@ impl TastyTrade {
             FixedIncomeSecurity => DxFeedSymbol(symbol.0.clone()), // Handle as basic symbol
             LiquidityPool => DxFeedSymbol(symbol.0.clone()), // Handle as basic symbol
             Warrant => DxFeedSymbol(self.get_warrant(symbol).await?.symbol.0), // Convert to DxFeedSymbol
+            Index => DxFeedSymbol(symbol.0.clone()), // Handle as basic symbol
         };
         Ok(sym)
     }
