@@ -1,5 +1,6 @@
 use tastytrade::Symbol;
 use tastytrade::TastyTrade;
+use tastytrade::api::market_data::MarketDataRequest;
 use tastytrade::dxfeed::{self, EventData};
 use tastytrade::utils::config::TastyTradeConfig;
 
@@ -48,19 +49,28 @@ async fn main() {
 
     // Create a subscription for SPX quotes
     let mut quote_sub = streamer.create_sub(dxfeed::DXF_ET_QUOTE);
+    let market_data = tasty
+        .get_market_data(MarketDataRequest {
+            equity: Some(&["AAPL"]),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    println!("AAPL data: {:?}", market_data);
 
     // Subscribe to SPX symbol
-    let symbols = [Symbol::from("SPX")];
+    let symbols = [Symbol::from("AAPL")];
     quote_sub.add_symbols(&symbols);
 
-    println!("📈 Streaming quotes for SPX...");
+    println!("📈 Streaming quotes for AAPL...");
     println!("Press Ctrl+C to stop\n");
 
     // Stream quote events
     loop {
         match quote_sub.get_event().await {
             Ok(ev) => {
-                if let EventData::Quote(data) = ev.data {
+                if let EventData::Quote(data) = &ev.data {
                     println!(
                         "{}: Bid: ${:.2} / Ask: ${:.2}",
                         ev.sym, data.bid_price, data.ask_price

@@ -17,7 +17,6 @@ pub struct QuoteSubscription {
     pub id: SubscriptionId,
     streamer: Arc<Mutex<QuoteStreamer>>,
     event_types: i32, // Keep for compatibility with existing code
-    event_receiver: flume::Receiver<dxfeed::Event>, // Keep for compatibility
     dxlink_receiver: mpsc::Receiver<MarketEvent>, // New DXLink event receiver
     symbols: Vec<Symbol>, // To track subscribed symbols
 }
@@ -27,55 +26,42 @@ impl QuoteSubscription {
     pub fn add_symbols<S: AsSymbol>(&self, symbols: &[S]) {
         let symbols: Vec<Symbol> = symbols.iter().map(|sym| sym.as_symbol()).collect();
 
-        // Update subscribed symbols internally
-        let mut my_symbols = Vec::new();
-        for sym in &symbols {
-            my_symbols.push(sym.clone());
-        }
-
         // Prepare subscription requests for DXLink
         let subscriptions = symbols
-            .iter()
-            .flat_map(|sym| {
-                let mut requests = Vec::new();
-
+            .into_iter()
+            .map(|sym| {
                 // Transform dxfeed flags to DXLink event types
                 let event_flags = self.event_types;
 
                 if (event_flags & dxfeed::DXF_ET_QUOTE) != 0 {
-                    requests.push(FeedSubscription {
+                    FeedSubscription {
                         event_type: "Quote".to_string(),
-                        symbol: sym.0.clone(),
+                        symbol: sym.0,
                         from_time: None,
                         source: None,
-                    });
-                }
-
-                if (event_flags & dxfeed::DXF_ET_TRADE) != 0 {
-                    requests.push(FeedSubscription {
+                    }
+                } else if (event_flags & dxfeed::DXF_ET_TRADE) != 0 {
+                    FeedSubscription {
                         event_type: "Trade".to_string(),
-                        symbol: sym.0.clone(),
+                        symbol: sym.0,
                         from_time: None,
                         source: None,
-                    });
-                }
-
-                if (event_flags & dxfeed::DXF_ET_GREEKS) != 0 {
-                    requests.push(FeedSubscription {
+                    }
+                } else if (event_flags & dxfeed::DXF_ET_GREEKS) != 0 {
+                    FeedSubscription {
                         event_type: "Greeks".to_string(),
-                        symbol: sym.0.clone(),
+                        symbol: sym.0,
                         from_time: None,
                         source: None,
-                    });
+                    }
+                } else {
+                    panic!("Invalid event type: {}", event_flags);
                 }
-
-                requests
             })
             .collect::<Vec<FeedSubscription>>();
 
         // Execute the subscription in a new async task
         let streamer_clone = self.streamer.clone();
-        let subscriptions_clone = subscriptions.clone();
 
         tokio::spawn(async move {
             // Get the data we need from the mutex before awaiting
@@ -94,9 +80,9 @@ impl QuoteSubscription {
             // Now we're safe to await since we no longer hold the MutexGuard
             if let (Some(channel_id), Some(tx)) = (channel_id, tx) {
                 // Send subscribe command through the channel
-                if !subscriptions_clone.is_empty()
+                if !subscriptions.is_empty()
                     && let Err(e) = tx
-                        .send(DXLinkCommand::Subscribe(channel_id, subscriptions_clone))
+                        .send(DXLinkCommand::Subscribe(channel_id, subscriptions))
                         .await
                 {
                     error!("Failed to send subscription command: {}", e);
@@ -107,7 +93,7 @@ impl QuoteSubscription {
 
     /// Receive one event from feed. Yields if there are no events.
     /// Compatible with previous interface
-    pub async fn get_event(&mut self) -> Result<dxfeed::Event, flume::RecvError> {
+    pub async fn get_event(&mut self) -> Result<dxfeed::Event, TastyTradeError> {
         // Try to receive event from DXLink
         match self.dxlink_receiver.recv().await {
             Some(market_event) => {
@@ -174,8 +160,8 @@ impl QuoteSubscription {
                 }
             }
             None => {
-                // Fallback to previous implementation
-                self.event_receiver.recv_async().await
+                debug!("Channel is closed");
+                Err(TastyTradeError::Streaming("Channel is closed".to_string()))
             }
         }
     }
@@ -207,7 +193,6 @@ impl Clone for QuoteSubscription {
             id: self.id,
             streamer: self.streamer.clone(),
             event_types: self.event_types,
-            event_receiver: self.event_receiver.clone(), // This requires flume::Receiver to implement Clone
             dxlink_receiver: rx,
             symbols: self.symbols.clone(),
         }
@@ -218,7 +203,6 @@ impl Clone for QuoteSubscription {
 enum DXLinkCommand {
     Subscribe(u32, Vec<FeedSubscription>),
     Unsubscribe(u32, Vec<FeedSubscription>),
-    CreateEventStream,
     AddEventSender(u32, mpsc::Sender<MarketEvent>),
     RemoveEventSender(u32),
     Disconnect,
@@ -226,9 +210,8 @@ enum DXLinkCommand {
 
 pub struct QuoteStreamer {
     #[allow(dead_code)]
-    dxlink_client: Option<DXLinkClient>,
     channel_id: Option<u32>,
-    subscriptions: Arc<Mutex<HashMap<Symbol, Vec<String>>>>,
+    event_senders: Arc<Mutex<HashMap<u32, Vec<mpsc::Sender<MarketEvent>>>>>,
     next_sub_id: usize,
     subscription_map: HashMap<SubscriptionId, QuoteSubscription>,
     dxlink_command_tx: Option<mpsc::Sender<DXLinkCommand>>,
@@ -244,12 +227,9 @@ impl QuoteStreamer {
 
         // Connect to server
         info!("Connecting to DXLink server: {}", tokens.streamer_url);
-        if let Err(e) = client.connect().await {
-            return Err(TastyTradeError::Streaming(format!(
-                "Error connecting to DXLink: {}",
-                e
-            )));
-        }
+        let mut market_data_receiver = client.connect().await.map_err(|e| {
+            TastyTradeError::Streaming(format!("Error connecting to DXLink: {}", e))
+        })?;
 
         // Create channel for market data
         let channel_id = match client.create_feed_channel("AUTO").await {
@@ -277,19 +257,43 @@ impl QuoteStreamer {
             )));
         }
 
+        // Create event senders map within a arc mutex
+        let event_senders_map = Arc::new(Mutex::new(
+            HashMap::<u32, Vec<mpsc::Sender<MarketEvent>>>::new(),
+        ));
+
         // Create command channel
         let (command_tx, mut command_rx) = mpsc::channel::<DXLinkCommand>(100);
 
-        // Spawn task to handle DXLink commands
+        let event_senders_clone_1 = event_senders_map.clone();
+        // Move rx directly into the spawned task
+        tokio::spawn(async move {
+            // Use rx directly, don't try to borrow from event_stream
+            while let Some(event) = market_data_receiver.recv().await {
+                // Determine which symbol this event is for
+                let _symbol = match &event {
+                    MarketEvent::Quote(quote) => &quote.event_symbol,
+                    MarketEvent::Trade(trade) => &trade.event_symbol,
+                    MarketEvent::Greeks(greeks) => &greeks.event_symbol,
+                };
+
+                // Forward to all interested subscriptions
+                for sender_list in event_senders_clone_1.lock().unwrap().values() {
+                    for sender in sender_list {
+                        // Try to send, but don't block if receiver is full
+                        let _ = sender.try_send(event.clone());
+                    }
+                }
+            }
+        });
+
+        let event_senders_clone_2 = event_senders_map.clone();
         // Spawn task to handle DXLink commands
         tokio::spawn(async move {
-            // Map to store event forwarding channels by subscription ID
-            let mut event_senders: HashMap<u32, Vec<mpsc::Sender<MarketEvent>>> = HashMap::new();
-            let _event_stream: Option<mpsc::Receiver<MarketEvent>> = None;
-
             while let Some(cmd) = command_rx.recv().await {
                 match cmd {
                     DXLinkCommand::Subscribe(channel_id, subscriptions) => {
+                        info!("Subscribing to symbols: {:?}", subscriptions);
                         if let Err(e) = client.subscribe(channel_id, subscriptions).await {
                             error!("Error subscribing to symbols: {}", e);
                         }
@@ -299,39 +303,6 @@ impl QuoteStreamer {
                             error!("Error unsubscribing from symbols: {}", e);
                         }
                     }
-                    DXLinkCommand::CreateEventStream => {
-                        match client.event_stream() {
-                            Ok(mut rx) => {
-                                debug!("Successfully created event stream");
-                                // Clone the map of senders for use in the task
-                                let senders = event_senders.clone();
-
-                                // Move rx directly into the spawned task
-                                tokio::spawn(async move {
-                                    // Use rx directly, don't try to borrow from event_stream
-                                    while let Some(event) = rx.recv().await {
-                                        // Determine which symbol this event is for
-                                        let _symbol = match &event {
-                                            MarketEvent::Quote(quote) => &quote.event_symbol,
-                                            MarketEvent::Trade(trade) => &trade.event_symbol,
-                                            MarketEvent::Greeks(greeks) => &greeks.event_symbol,
-                                        };
-
-                                        // Forward to all interested subscriptions
-                                        for sender_list in senders.values() {
-                                            for sender in sender_list {
-                                                // Try to send, but don't block if receiver is full
-                                                let _ = sender.try_send(event.clone());
-                                            }
-                                        }
-                                    }
-                                });
-                            }
-                            Err(e) => {
-                                error!("Failed to create event stream: {}", e);
-                            }
-                        }
-                    }
                     DXLinkCommand::Disconnect => {
                         if let Err(e) = client.disconnect().await {
                             warn!("Error disconnecting from DXLink: {}", e);
@@ -339,12 +310,17 @@ impl QuoteStreamer {
                         break; // Exit the loop after disconnecting
                     }
                     DXLinkCommand::AddEventSender(subscription_id, sender) => {
-                        let senders = event_senders.entry(subscription_id).or_default();
-                        senders.push(sender);
-                        debug!("Added event sender for subscription {}", subscription_id);
+                        if let Ok(mut sender_guard) = event_senders_clone_2.lock() {
+                            let senders = sender_guard.entry(subscription_id).or_default();
+                            senders.push(sender);
+                            debug!("Added event sender for subscription {}", subscription_id);
+                        }
                     }
                     DXLinkCommand::RemoveEventSender(subscription_id) => {
-                        event_senders.remove(&subscription_id);
+                        event_senders_clone_2
+                            .lock()
+                            .unwrap()
+                            .remove(&subscription_id);
                         debug!("Removed event senders for subscription {}", subscription_id);
                     }
                 }
@@ -353,9 +329,8 @@ impl QuoteStreamer {
         });
 
         Ok(Self {
-            dxlink_client: None, // We moved client into the command handler task
             channel_id: Some(channel_id),
-            subscriptions: Arc::new(Mutex::new(HashMap::new())),
+            event_senders: event_senders_map,
             next_sub_id: 0,
             subscription_map: HashMap::new(),
             dxlink_command_tx: Some(command_tx),
@@ -369,7 +344,6 @@ impl QuoteStreamer {
 
         // Set up channels for events
         let (dxlink_tx, dxlink_rx) = mpsc::channel(100);
-        let (_event_sender, event_receiver) = flume::unbounded();
 
         // Register event sender if we have a command channel
         if let Some(client_tx) = &self.dxlink_command_tx {
@@ -388,20 +362,6 @@ impl QuoteStreamer {
 
             // Use tokio::task::spawn_local or equivalent if available, or handle differently
             tokio::spawn(send_task);
-
-            // Create a separate event stream from the DXLink client if this is the first subscription
-            if self.subscription_map.is_empty() && self.channel_id.is_some() {
-                let stream_tx_clone = client_tx.clone();
-                let stream_task = async move {
-                    // Send command to set up event stream
-                    match stream_tx_clone.send(DXLinkCommand::CreateEventStream).await {
-                        Ok(_) => debug!("Successfully requested event stream"),
-                        Err(e) => error!("Failed to request event stream: {}", e),
-                    }
-                };
-
-                tokio::spawn(stream_task);
-            }
         }
 
         // Create subscription
@@ -409,7 +369,6 @@ impl QuoteStreamer {
             id,
             streamer: Arc::new(Mutex::new(self.clone())), // Clone self
             event_types: flags,
-            event_receiver,
             dxlink_receiver: dxlink_rx,
             symbols: Vec::new(),
         };
@@ -521,9 +480,8 @@ impl QuoteStreamer {
 impl Clone for QuoteStreamer {
     fn clone(&self) -> Self {
         Self {
-            dxlink_client: None, // Don't clone the client
             channel_id: self.channel_id,
-            subscriptions: self.subscriptions.clone(),
+            event_senders: self.event_senders.clone(),
             next_sub_id: self.next_sub_id,
             subscription_map: HashMap::new(), // Create a new empty map
             dxlink_command_tx: self.dxlink_command_tx.clone(),

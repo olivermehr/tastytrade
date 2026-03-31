@@ -25,7 +25,7 @@ impl Display for TastyApiResponse<String> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Response<T: Serialize + std::fmt::Debug> {
     pub data: T,
-    pub context: String,
+    pub context: Option<String>,
     pub pagination: Option<Pagination>,
 }
 

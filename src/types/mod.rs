@@ -5,10 +5,11 @@
 ******************************************************************************/
 
 pub(crate) mod balance;
+pub mod dxfeed;
 pub(crate) mod event;
 pub(crate) mod instrument;
 pub(crate) mod login;
+pub(crate) mod market_data;
+pub(crate) mod metrics;
 pub(crate) mod order;
 pub(crate) mod position;
-
-pub mod dxfeed;

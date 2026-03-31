@@ -73,4 +73,5 @@ pub mod logger;
 
 pub mod download;
 pub mod file;
+pub mod join;
 pub mod parse;

@@ -141,19 +141,8 @@ impl TastyTrade {
         U: AsRef<str>,
     {
         let full_url = format!("{}{}", self.config.base_url, url.as_ref());
-        let query_string = query
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join("&");
-        let request_info = if query_string.is_empty() {
-            full_url.clone()
-        } else {
-            format!("{}?{}", full_url, query_string)
-        };
-
         let response = self.client.get(&full_url).query(query).send().await?;
-
+        let request_info = response.url().to_string();
         let status = response.status();
 
         if !status.is_success() {
@@ -165,17 +154,17 @@ impl TastyTrade {
                 "HTTP {} {} for request {}: {}",
                 status.as_u16(),
                 status.canonical_reason().unwrap_or("Unknown"),
-                request_info,
+                &request_info,
                 error_text
             )));
         }
 
         let text = response.text().await?;
-        debug!("🔍 Full response for {}: {}", request_info, text);
+        debug!("🔍 Full response for {}: {}", &request_info, text);
         let result = serde_json::from_str::<TastyApiResponse<T>>(&text).map_err(|e| {
             crate::TastyTradeError::Unknown(format!(
                 "Failed to parse JSON response for request {}: {}. Full response: {}",
-                request_info, e, text
+                &request_info, e, text
             ))
         })?;
 

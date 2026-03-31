@@ -73,7 +73,7 @@ impl TastyTradeConfig {
             .unwrap_or_else(|_| "false".to_string())
             .parse()
             .unwrap_or(false);
-        let log_level = env::var("LOGLEVEL").unwrap_or_else(|_| "INFO".to_string());
+        let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "INFO".to_string());
         let refresh_token = env::var("TASTYTRADE_REFRESH_TOKEN").unwrap_or_default();
 
         // Initialize logger with the specified log level
