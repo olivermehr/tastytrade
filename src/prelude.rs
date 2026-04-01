@@ -62,12 +62,6 @@ pub use crate::streaming::quote_streamer::{QuoteStreamer, QuoteSubscription};
 // Re-export quote streaming types
 pub use crate::api::quote_streaming::{DxFeedSymbol, QuoteStreamerTokens};
 
-// Re-export option chain types
-pub use crate::api::option_chain::{
-    Expiration as OptionExpiration, NestedOptionChain as OptionNestedChain, OptionChain,
-    OptionInfo, Strike as OptionStrike,
-};
-
 // Re-export utility types
 pub use crate::utils::{
     config::TastyTradeConfig, download::*, file::*, logger::setup_logger, parse::*,

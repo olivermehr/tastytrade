@@ -176,7 +176,17 @@ impl fmt::Display for OrderStatus {
 /// JSON or other serialized formats.  It also ensures ordering, equality, and
 /// hashing are based on the underlying string value.
 #[derive(
-    DebugPretty, DisplaySimple, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash,
+    DebugPretty,
+    DisplaySimple,
+    Serialize,
+    Deserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
 )]
 #[serde(transparent)]
 pub struct Symbol(pub String);

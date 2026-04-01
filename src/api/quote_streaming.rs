@@ -80,7 +80,7 @@ impl TastyTrade {
         use InstrumentType::*;
         let sym = match instrument_type {
             Equity => self.get_equity_info(symbol).await?.streamer_symbol,
-            EquityOption => self.get_option_info(symbol).await?.streamer_symbol,
+            EquityOption => self.get_option_info(symbol).await?.streamer_symbol.unwrap(),
             EquityOffering => self.get_equity_info(symbol).await?.streamer_symbol, // Handle as equity
             Future => self.get_future(symbol).await?.streamer_symbol,
             FutureOption => self

@@ -1,11 +1,8 @@
-use super::{base::Items, quote_streaming::DxFeedSymbol};
+use super::base::Items;
 use crate::api::base::TastyResult;
+use crate::prelude::{EquityOption, NestedOptionChain};
+use crate::types::instrument::CompactOptionChain;
 use crate::{AsSymbol, Symbol, TastyTrade};
-use pretty_simple_display::{DebugPretty, DisplaySimple};
-use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
 
 impl TastyTrade {
     pub async fn nested_option_chain_for(
@@ -21,14 +18,14 @@ impl TastyTrade {
     pub async fn option_chain_for(
         &self,
         symbol: impl Into<Symbol>,
-    ) -> TastyResult<Vec<OptionChain>> {
-        let resp: Items<OptionChain> = self
+    ) -> TastyResult<Vec<CompactOptionChain>> {
+        let resp: Items<CompactOptionChain> = self
             .get(format!("/option-chains/{}", symbol.into().0))
             .await?;
         Ok(resp.items)
     }
 
-    pub async fn get_option_info(&self, symbol: impl AsSymbol) -> TastyResult<OptionInfo> {
+    pub async fn get_option_info(&self, symbol: impl AsSymbol) -> TastyResult<EquityOption> {
         self.get(format!(
             "/instruments/equity-options/{}",
             symbol.as_symbol().0
@@ -37,53 +34,10 @@ impl TastyTrade {
     }
 }
 
-#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct OptionInfo {
-    pub streamer_symbol: DxFeedSymbol,
-}
-
-#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct NestedOptionChain {
-    pub underlying_symbol: Symbol,
-    pub root_symbol: Symbol,
-    pub option_chain_type: String,
-    pub shares_per_contract: u64,
-    pub expirations: Vec<Expiration>,
-}
-
-#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Expiration {
-    pub expiration_type: String,
-    pub expiration_date: String,
-    pub days_to_expiration: u64,
-    pub settlement_type: String,
-    pub strikes: Vec<Strike>,
-}
-
-#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Strike {
-    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
-    pub strike_price: Decimal,
-    pub call: Symbol,
-    pub put: Symbol,
-}
-
-#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct OptionChain {
-    pub underlying_symbol: Symbol,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
-    pub strike_price: Decimal,
-    #[serde(flatten)]
-    pub extra: HashMap<String, Value>,
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::prelude::{DxFeedSymbol, Expiration, Strike};
+
     use super::*;
     use rust_decimal::Decimal;
     use std::str::FromStr;
@@ -94,8 +48,11 @@ mod tests {
             "streamer-symbol": "AAPL240920C00150000"
         }"#;
 
-        let option_info: OptionInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(option_info.streamer_symbol.0, "AAPL240920C00150000");
+        let option_info: EquityOption = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            option_info.streamer_symbol.unwrap().0,
+            "AAPL240920C00150000"
+        );
     }
 
     #[test]
@@ -167,40 +124,20 @@ mod tests {
     }
 
     #[test]
-    fn test_option_chain_deserialization() {
-        let json = r#"{
-            "underlying-symbol": "MSFT",
-            "strike-price": "300.00",
-            "extra-field": "extra-value",
-            "another-field": 42
-        }"#;
-
-        let chain: OptionChain = serde_json::from_str(json).unwrap();
-        assert_eq!(chain.underlying_symbol.0, "MSFT");
-        assert_eq!(chain.strike_price, Decimal::from_str("300.00").unwrap());
-        assert_eq!(chain.extra.len(), 2);
-        assert_eq!(
-            chain.extra.get("extra-field").unwrap().as_str().unwrap(),
-            "extra-value"
-        );
-        assert_eq!(
-            chain.extra.get("another-field").unwrap().as_i64().unwrap(),
-            42
-        );
-    }
-
-    #[test]
     fn test_debug_implementations() {
-        let option_info = OptionInfo {
-            streamer_symbol: DxFeedSymbol("TEST".to_string()),
+        let option_info = EquityOption {
+            streamer_symbol: Some(DxFeedSymbol("TEST".to_string())),
+            ..Default::default()
         };
         let debug_str = format!("{:?}", option_info);
         assert!(debug_str.contains("TEST"));
 
         let strike = Strike {
             strike_price: Decimal::from_str("100.00").unwrap(),
-            call: Symbol::from("CALL"),
-            put: Symbol::from("PUT"),
+            call: Symbol("CALL".to_string()),
+            put: Symbol("PUT".to_string()),
+            call_streamer_symbol: DxFeedSymbol("CALL".to_string()),
+            put_streamer_symbol: DxFeedSymbol("PUT".to_string()),
         };
         let debug_str = format!("{:?}", strike);
         assert!(debug_str.contains("100"));

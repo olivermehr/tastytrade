@@ -51,9 +51,10 @@ pub struct CompactOptionChain {
 }
 
 /// Represents the different types of financial instruments.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub enum InstrumentType {
     /// Represents an equity instrument.
+    #[default]
     Equity,
     /// Represents an equity option instrument.
     #[serde(rename = "Equity Option")]
@@ -413,7 +414,7 @@ pub struct FuturesStrike {
 }
 
 /// Represents an equity option.
-#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
+#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct EquityOption {
     /// The symbol of the equity option.
