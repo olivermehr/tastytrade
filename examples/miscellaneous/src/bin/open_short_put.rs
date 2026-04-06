@@ -6,7 +6,6 @@
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
-use std::env;
 use std::time::Duration;
 use tastytrade::prelude::*;
 use tracing::{error, info, warn};
@@ -19,19 +18,6 @@ const DTE_TARGET: u64 = 7; // Target days to expiration
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_logger();
-    info!("TastyTrade Short ATM Put Example");
-    info!("--------------------------------");
-
-    // Check if environment variables are set
-    if env::var("TASTYTRADE_USERNAME").is_err() || env::var("TASTYTRADE_PASSWORD").is_err() {
-        info!("Please set TASTYTRADE_USERNAME and TASTYTRADE_PASSWORD environment variables.");
-        info!("Example:");
-        info!("  export TASTYTRADE_USERNAME=your_username");
-        info!("  export TASTYTRADE_PASSWORD=your_password");
-        info!("  export TASTYTRADE_USE_DEMO=true"); // Recommended for testing!
-        info!("  export LOGLEVEL=DEBUG");
-        std::process::exit(1);
-    }
 
     // Load configuration from environment variables
     let config = TastyTradeConfig::from_env();

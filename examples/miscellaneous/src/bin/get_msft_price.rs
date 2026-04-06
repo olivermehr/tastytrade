@@ -8,13 +8,15 @@
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
-use std::env;
-use std::time::Duration;
+use std::{env, time::Duration};
 use tastytrade::prelude::*;
 use tracing::{debug, error, info};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    unsafe {
+        env::set_var("LOG_LEVEL", "DEBUG");
+    }
     setup_logger();
     // Load configuration from environment variables
     let config = TastyTradeConfig::new();
@@ -29,12 +31,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("TastyTrade MSFT Price Example (Updated API)");
     info!("-----------------------------------------");
-
-    // Check if environment variables are set
-    if env::var("TASTYTRADE_USERNAME").is_err() || env::var("TASTYTRADE_PASSWORD").is_err() {
-        info!("Please set TASTYTRADE_USERNAME and TASTYTRADE_PASSWORD environment variables.");
-        std::process::exit(1);
-    }
 
     // Login to the TastyTrade API
     let tasty = TastyTrade::login(&config).await?;
@@ -58,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create subscription
     debug!("Creating subscription with flags: {}", DXF_ET_QUOTE);
-    let quote_sub = &mut *quote_streamer.create_sub(DXF_ET_QUOTE);
+    let quote_sub = &mut quote_streamer.create_sub(DXF_ET_QUOTE);
     debug!("Subscription created successfully");
 
     // Get streamer symbol
@@ -124,5 +120,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     info!("Example completed");
+    unsafe {
+        env::remove_var("LOG_LEVEL");
+    }
     Ok(())
 }

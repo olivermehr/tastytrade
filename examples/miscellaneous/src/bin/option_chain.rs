@@ -6,7 +6,6 @@
 
 use chrono::{Local, NaiveDate};
 use rust_decimal::Decimal;
-use std::env;
 use tastytrade::prelude::*;
 use tracing::{debug, info};
 
@@ -15,17 +14,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_logger();
     info!("TastyTrade MSFT 0DTE Options Example");
     info!("-----------------------------------");
-
-    // Check if environment variables are set
-    if env::var("TASTYTRADE_USERNAME").is_err() || env::var("TASTYTRADE_PASSWORD").is_err() {
-        info!("Please set TASTYTRADE_USERNAME and TASTYTRADE_PASSWORD environment variables.");
-        info!("Example:");
-        info!("  export TASTYTRADE_USERNAME=your_username");
-        info!("  export TASTYTRADE_PASSWORD=your_password");
-        info!("  export TASTYTRADE_USE_DEMO=true");
-        info!("  export LOGLEVEL=DEBUG");
-        std::process::exit(1);
-    }
 
     // Load configuration from environment variables
     let config = TastyTradeConfig::from_env();
@@ -131,8 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     info!("Near-the-money 0DTE options for MSFT:");
                     for (i, strike) in near_the_money_strikes.iter().enumerate() {
                         info!("{}. Strike price: ${}", i + 1, strike.strike_price);
-                        info!("   Call symbol: {}", strike.call.0);
-                        info!("   Put symbol: {}", strike.put.0);
+                        info!("   Call symbol: {}", strike.call_streamer_symbol);
+                        info!("   Put symbol: {}", strike.put_streamer_symbol);
 
                         // Get option info for the call and put if desired
                         debug!("   To get detailed quotes or to trade these options,");

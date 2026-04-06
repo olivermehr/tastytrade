@@ -1,4 +1,3 @@
-use crate::utils::logger::setup_logger_with_level;
 use crate::{TastyTrade, TastyTradeError};
 use pretty_simple_display::{DebugPretty, DisplaySimple};
 use serde::{Deserialize, Serialize};
@@ -27,8 +26,6 @@ pub struct TastyTradeConfig {
     pub refresh_token: String,
     /// Whether to use demo/cert environment
     pub use_demo: bool,
-    /// Log level: "INFO", "DEBUG", "WARN", "ERROR", "TRACE"
-    pub log_level: String,
     /// Base URL for API requests
     pub base_url: String,
     /// Websocket URL.
@@ -42,7 +39,6 @@ impl Default for TastyTradeConfig {
             client_secret: String::new(),
             refresh_token: String::new(),
             use_demo: false,
-            log_level: "INFO".to_string(),
             base_url: BASE_URL.to_string(),
             websocket_url: WEBSOCKET_URL.to_string(),
         }
@@ -73,18 +69,13 @@ impl TastyTradeConfig {
             .unwrap_or_else(|_| "false".to_string())
             .parse()
             .unwrap_or(false);
-        let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "INFO".to_string());
         let refresh_token = env::var("TASTYTRADE_REFRESH_TOKEN").unwrap_or_default();
-
-        // Initialize logger with the specified log level
-        setup_logger_with_level(&log_level);
 
         Self {
             client_id,
             client_secret,
             refresh_token,
             use_demo,
-            log_level,
             base_url: if use_demo {
                 BASE_DEMO_URL.to_string()
             } else {
@@ -102,10 +93,6 @@ impl TastyTradeConfig {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, TastyTradeError> {
         let contents = fs::read_to_string(path)?;
         let config: TastyTradeConfig = serde_json::from_str(&contents)?;
-
-        // Initialize logger with the log level from the config file
-        setup_logger_with_level(&config.log_level);
-
         Ok(config)
     }
 
@@ -148,7 +135,6 @@ mod tests {
         assert!(config.client_secret.is_empty());
         assert!(config.refresh_token.is_empty());
         assert!(!config.use_demo);
-        assert_eq!(config.log_level, "INFO");
     }
 
     #[test]
@@ -160,7 +146,6 @@ mod tests {
             env::set_var("TASTYTRADE_CLIENT_SECRET", "test_client_secret");
             env::set_var("TASTYTRADE_REFRESH_TOKEN", "test_refresh_token");
             env::set_var("TASTYTRADE_USE_DEMO", "true");
-            env::set_var("LOGLEVEL", "DEBUG");
         }
         let config = TastyTradeConfig::from_env();
         assert_eq!(config.client_id, "test_client_id");
@@ -176,7 +161,6 @@ mod tests {
             env::remove_var("TASTYTRADE_CLIENT_SECRET");
             env::remove_var("TASTYTRADE_REFRESH_TOKEN");
             env::remove_var("TASTYTRADE_USE_DEMO");
-            env::remove_var("LOGLEVEL");
         }
     }
 
@@ -202,7 +186,6 @@ mod tests {
             client_secret: "test_client_secret".to_string(),
             refresh_token: "test_refresh_token".to_string(),
             use_demo: true,
-            log_level: "DEBUG".to_string(),
             base_url: BASE_DEMO_URL.to_string(),
             websocket_url: WEBSOCKET_DEMO_URL.to_string(),
         };
@@ -226,7 +209,6 @@ mod tests {
         assert_eq!(config.client_secret, deserialized.client_secret);
         assert_eq!(config.refresh_token, deserialized.refresh_token);
         assert_eq!(config.use_demo, deserialized.use_demo);
-        assert_eq!(config.log_level, deserialized.log_level);
     }
 
     #[test]

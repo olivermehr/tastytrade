@@ -3,8 +3,6 @@
    Email: jb@taunais.com
    Date: 7/3/25
 ******************************************************************************/
-
-use std::env;
 use tastytrade::prelude::*;
 use tracing::{debug, info};
 
@@ -13,17 +11,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_logger();
     info!("TastyTrade Available Symbols Example");
     info!("-----------------------------------");
-
-    // Check if environment variables are set
-    if env::var("TASTYTRADE_USERNAME").is_err() || env::var("TASTYTRADE_PASSWORD").is_err() {
-        info!("Please set TASTYTRADE_USERNAME and TASTYTRADE_PASSWORD environment variables.");
-        info!("Example:");
-        info!("  export TASTYTRADE_USERNAME=your_username");
-        info!("  export TASTYTRADE_PASSWORD=your_password");
-        info!("  export TASTYTRADE_USE_DEMO=true");
-        info!("  export LOGLEVEL=DEBUG");
-        std::process::exit(1);
-    }
 
     // Load configuration from environment variables
     let config = TastyTradeConfig::from_env();

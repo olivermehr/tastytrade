@@ -6,7 +6,8 @@ use dxlink::{DXLinkClient, EventType, FeedSubscription, MarketEvent};
 use pretty_simple_display::{DebugPretty, DisplaySimple};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, atomic};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -15,78 +16,79 @@ pub struct SubscriptionId(usize);
 
 pub struct QuoteSubscription {
     pub id: SubscriptionId,
-    streamer: Arc<Mutex<QuoteStreamer>>,
+    channel_id: u32,
+    command_sender: mpsc::Sender<DXLinkCommand>,
     event_types: i32, // Keep for compatibility with existing code
     dxlink_receiver: mpsc::Receiver<MarketEvent>, // New DXLink event receiver
+    dxlink_tx: mpsc::Sender<MarketEvent>, // To send events to DXLink
     symbols: Vec<Symbol>, // To track subscribed symbols
 }
 
 impl QuoteSubscription {
     /// Add symbols to subscription. See the "Note on symbology" section in [`QuoteSubscription`]
-    pub fn add_symbols<S: AsSymbol>(&self, symbols: &[S]) {
+    pub fn add_symbols<S: AsSymbol>(&mut self, symbols: &[S]) {
         let symbols: Vec<Symbol> = symbols.iter().map(|sym| sym.as_symbol()).collect();
+        let cloned_symbols = symbols.clone();
+        let cloned_symbols_2 = symbols.clone();
 
         // Prepare subscription requests for DXLink
         let subscriptions = symbols
             .into_iter()
-            .map(|sym| {
+            .flat_map(|sym| {
                 // Transform dxfeed flags to DXLink event types
                 let event_flags = self.event_types;
+                let mut subscriptions = Vec::new();
 
                 if (event_flags & dxfeed::DXF_ET_QUOTE) != 0 {
-                    FeedSubscription {
+                    subscriptions.push(FeedSubscription {
                         event_type: "Quote".to_string(),
-                        symbol: sym.0,
+                        symbol: sym.0.clone(),
                         from_time: None,
                         source: None,
-                    }
-                } else if (event_flags & dxfeed::DXF_ET_TRADE) != 0 {
-                    FeedSubscription {
-                        event_type: "Trade".to_string(),
-                        symbol: sym.0,
-                        from_time: None,
-                        source: None,
-                    }
-                } else if (event_flags & dxfeed::DXF_ET_GREEKS) != 0 {
-                    FeedSubscription {
-                        event_type: "Greeks".to_string(),
-                        symbol: sym.0,
-                        from_time: None,
-                        source: None,
-                    }
-                } else {
-                    panic!("Invalid event type: {}", event_flags);
+                    });
                 }
+                if (event_flags & dxfeed::DXF_ET_TRADE) != 0 {
+                    subscriptions.push(FeedSubscription {
+                        event_type: "Trade".to_string(),
+                        symbol: sym.0.clone(),
+                        from_time: None,
+                        source: None,
+                    });
+                }
+                if (event_flags & dxfeed::DXF_ET_GREEKS) != 0 {
+                    subscriptions.push(FeedSubscription {
+                        event_type: "Greeks".to_string(),
+                        symbol: sym.0.clone(),
+                        from_time: None,
+                        source: None,
+                    });
+                }
+                subscriptions
             })
             .collect::<Vec<FeedSubscription>>();
-
-        // Execute the subscription in a new async task
-        let streamer_clone = self.streamer.clone();
+        let cloned_command_sender = self.command_sender.clone();
+        let cloned_dxlink_tx = self.dxlink_tx.clone();
+        let channel_id = self.channel_id;
+        let subscription_id = self.id;
+        self.symbols.extend(cloned_symbols);
 
         tokio::spawn(async move {
-            // Get the data we need from the mutex before awaiting
-            let (channel_id, tx) = {
-                if let Ok(streamer_guard) = streamer_clone.lock() {
-                    // Extract what we need from the guard
-                    let channel_id = streamer_guard.channel_id;
-                    let tx = streamer_guard.dxlink_command_tx.clone();
-                    (channel_id, tx)
-                } else {
-                    // If we can't lock the mutex, just return early
-                    return;
-                }
-            }; // MutexGuard is dropped here
-
-            // Now we're safe to await since we no longer hold the MutexGuard
-            if let (Some(channel_id), Some(tx)) = (channel_id, tx) {
-                // Send subscribe command through the channel
-                if !subscriptions.is_empty()
-                    && let Err(e) = tx
-                        .send(DXLinkCommand::Subscribe(channel_id, subscriptions))
-                        .await
-                {
-                    error!("Failed to send subscription command: {}", e);
-                }
+            if let Err(e) = cloned_command_sender
+                .send(DXLinkCommand::AddEventSender(
+                    subscription_id,
+                    cloned_symbols_2,
+                    cloned_dxlink_tx,
+                ))
+                .await
+            {
+                error!("Failed to add event sender: {}", e);
+            }
+            if !subscriptions.is_empty()
+                && let Err(e) = cloned_command_sender
+                    .send(DXLinkCommand::Subscribe(channel_id, subscriptions))
+                    .await
+            {
+                error!("Failed to send subscription command: {}", e);
             }
         });
     }
@@ -167,53 +169,19 @@ impl QuoteSubscription {
     }
 }
 
-impl Clone for QuoteSubscription {
-    fn clone(&self) -> Self {
-        // Create a new channel for DXLink events
-        let (tx, rx) = mpsc::channel(100);
-
-        // Register this new channel with the streamer
-        if let Ok(streamer) = self.streamer.lock()
-            && let Some(cmd_tx) = &streamer.dxlink_command_tx
-        {
-            let cmd_tx_clone = cmd_tx.clone();
-            let sub_id = self.id.0;
-
-            tokio::spawn(async move {
-                if let Err(e) = cmd_tx_clone
-                    .send(DXLinkCommand::AddEventSender(sub_id as u32, tx))
-                    .await
-                {
-                    error!("Failed to register cloned event sender: {}", e);
-                }
-            });
-        }
-
-        Self {
-            id: self.id,
-            streamer: self.streamer.clone(),
-            event_types: self.event_types,
-            dxlink_receiver: rx,
-            symbols: self.symbols.clone(),
-        }
-    }
-}
-
 // Commands for DXLink client to execute
 enum DXLinkCommand {
     Subscribe(u32, Vec<FeedSubscription>),
     Unsubscribe(u32, Vec<FeedSubscription>),
-    AddEventSender(u32, mpsc::Sender<MarketEvent>),
-    RemoveEventSender(u32),
+    AddEventSender(SubscriptionId, Vec<Symbol>, mpsc::Sender<MarketEvent>),
+    RemoveEventSender(SubscriptionId, Vec<Symbol>),
     Disconnect,
 }
 
 pub struct QuoteStreamer {
     #[allow(dead_code)]
     channel_id: Option<u32>,
-    event_senders: Arc<Mutex<HashMap<u32, Vec<mpsc::Sender<MarketEvent>>>>>,
-    next_sub_id: usize,
-    subscription_map: HashMap<SubscriptionId, QuoteSubscription>,
+    next_sub_id: Arc<atomic::AtomicUsize>,
     dxlink_command_tx: Option<mpsc::Sender<DXLinkCommand>>,
 }
 
@@ -258,36 +226,46 @@ impl QuoteStreamer {
         }
 
         // Create event senders map within a arc mutex
-        let event_senders_map = Arc::new(Mutex::new(
-            HashMap::<u32, Vec<mpsc::Sender<MarketEvent>>>::new(),
-        ));
+        let event_senders_map = Arc::new(Mutex::new(HashMap::<
+            SubscriptionId,
+            mpsc::Sender<MarketEvent>,
+        >::new()));
+        let subscription_id_map =
+            Arc::new(Mutex::new(HashMap::<Symbol, Vec<SubscriptionId>>::new()));
 
         // Create command channel
         let (command_tx, mut command_rx) = mpsc::channel::<DXLinkCommand>(100);
 
         let event_senders_clone_1 = event_senders_map.clone();
+        let subscription_id_map_clone_1 = subscription_id_map.clone();
+
         // Move rx directly into the spawned task
         tokio::spawn(async move {
             // Use rx directly, don't try to borrow from event_stream
             while let Some(event) = market_data_receiver.recv().await {
                 // Determine which symbol this event is for
-                let _symbol = match &event {
-                    MarketEvent::Quote(quote) => &quote.event_symbol,
-                    MarketEvent::Trade(trade) => &trade.event_symbol,
-                    MarketEvent::Greeks(greeks) => &greeks.event_symbol,
+                let symbol = match &event {
+                    MarketEvent::Quote(quote) => Symbol::from(&quote.event_symbol),
+                    MarketEvent::Trade(trade) => Symbol::from(&trade.event_symbol),
+                    MarketEvent::Greeks(greeks) => Symbol::from(&greeks.event_symbol),
                 };
 
-                // Forward to all interested subscriptions
-                for sender_list in event_senders_clone_1.lock().unwrap().values() {
-                    for sender in sender_list {
-                        // Try to send, but don't block if receiver is full
-                        let _ = sender.try_send(event.clone());
+                if let Ok(subscription_id_guard) = subscription_id_map_clone_1.lock()
+                    && let Some(subscription_id) = subscription_id_guard.get(&symbol)
+                {
+                    for subscription_id in subscription_id {
+                        if let Ok(event_senders_guard) = event_senders_clone_1.lock()
+                            && let Some(sender) = event_senders_guard.get(subscription_id)
+                        {
+                            let _ = sender.try_send(event.clone());
+                        }
                     }
                 }
             }
         });
 
         let event_senders_clone_2 = event_senders_map.clone();
+        let subscription_id_map_clone_2 = subscription_id_map.clone();
         // Spawn task to handle DXLink commands
         tokio::spawn(async move {
             while let Some(cmd) = command_rx.recv().await {
@@ -309,19 +287,39 @@ impl QuoteStreamer {
                         }
                         break; // Exit the loop after disconnecting
                     }
-                    DXLinkCommand::AddEventSender(subscription_id, sender) => {
-                        if let Ok(mut sender_guard) = event_senders_clone_2.lock() {
-                            let senders = sender_guard.entry(subscription_id).or_default();
-                            senders.push(sender);
+                    DXLinkCommand::AddEventSender(subscription_id, symbols_vec, sender) => {
+                        if let Ok(mut subscription_id_guard) = subscription_id_map_clone_2.lock() {
+                            for symbol in symbols_vec.into_iter() {
+                                debug!(
+                                    "Add event sender for subscription {} to symbol {}",
+                                    subscription_id, symbol
+                                );
+                                subscription_id_guard
+                                    .entry(symbol)
+                                    .or_default()
+                                    .push(subscription_id);
+                            }
+                        }
+                        if let Ok(mut event_senders_guard) = event_senders_clone_2.lock() {
+                            event_senders_guard.insert(subscription_id, sender);
                             debug!("Added event sender for subscription {}", subscription_id);
                         }
                     }
-                    DXLinkCommand::RemoveEventSender(subscription_id) => {
-                        event_senders_clone_2
-                            .lock()
-                            .unwrap()
-                            .remove(&subscription_id);
-                        debug!("Removed event senders for subscription {}", subscription_id);
+                    DXLinkCommand::RemoveEventSender(subscription_id, symbols_vec) => {
+                        if let Ok(mut subscription_id_guard) = subscription_id_map_clone_2.lock() {
+                            for symbol in symbols_vec.into_iter() {
+                                subscription_id_guard
+                                    .get_mut(&symbol)
+                                    .unwrap()
+                                    .retain(|id| *id != subscription_id);
+                                debug!("Removed subscription id for symbol {}", symbol);
+                            }
+                        }
+
+                        if let Ok(mut event_senders_guard) = event_senders_clone_2.lock() {
+                            event_senders_guard.remove(&subscription_id);
+                            debug!("Removed event sender for subscription {}", subscription_id);
+                        }
                     }
                 }
             }
@@ -330,182 +328,117 @@ impl QuoteStreamer {
 
         Ok(Self {
             channel_id: Some(channel_id),
-            event_senders: event_senders_map,
-            next_sub_id: 0,
-            subscription_map: HashMap::new(),
+            next_sub_id: Arc::new(atomic::AtomicUsize::new(0)),
             dxlink_command_tx: Some(command_tx),
         })
     }
 
     /// Create a subscription to market data. See `dxfeed::DXF_ET_*` for possible event types.
-    pub fn create_sub(&mut self, flags: i32) -> Box<QuoteSubscription> {
-        let id = SubscriptionId(self.next_sub_id);
-        self.next_sub_id += 1;
+    pub fn create_sub(&mut self, flags: i32) -> QuoteSubscription {
+        let id = SubscriptionId(self.next_sub_id.fetch_add(1, Ordering::Relaxed));
 
         // Set up channels for events
         let (dxlink_tx, dxlink_rx) = mpsc::channel(100);
 
-        // Register event sender if we have a command channel
-        if let Some(client_tx) = &self.dxlink_command_tx {
-            let client_tx_clone = client_tx.clone();
-            let sub_id = self.next_sub_id - 1; // Use the ID we just assigned
-
-            // Register the sender
-            let send_task = async move {
-                if let Err(e) = client_tx_clone
-                    .send(DXLinkCommand::AddEventSender(sub_id as u32, dxlink_tx))
-                    .await
-                {
-                    error!("Failed to register event sender: {}", e);
-                }
-            };
-
-            // Use tokio::task::spawn_local or equivalent if available, or handle differently
-            tokio::spawn(send_task);
-        }
-
         // Create subscription
-        let subscription = QuoteSubscription {
+        QuoteSubscription {
             id,
-            streamer: Arc::new(Mutex::new(self.clone())), // Clone self
+            channel_id: self.channel_id.unwrap(),
+            command_sender: self.dxlink_command_tx.clone().unwrap(),
             event_types: flags,
             dxlink_receiver: dxlink_rx,
+            dxlink_tx,
             symbols: Vec::new(),
-        };
-
-        // Store subscription in map and return a boxed clone
-        let sub_clone = subscription.clone();
-        self.subscription_map.insert(id, subscription);
-
-        Box::new(sub_clone)
-    }
-
-    /// Retrieve a subscription by id.
-    pub fn get_sub(&self, id: SubscriptionId) -> Option<&QuoteSubscription> {
-        self.subscription_map.get(&id)
-    }
-
-    /// Close and remove subscription by id.
-    /// Close and remove subscription by id.
-    pub fn close_sub(&mut self, id: SubscriptionId) {
-        // Get symbols from subscription to close
-        if let Some(subscription) = self.subscription_map.get(&id) {
-            let symbols = subscription.symbols.clone();
-
-            // Prepare unsubscribe requests
-            let unsubscribe_requests = symbols
-                .iter()
-                .flat_map(|sym| {
-                    let mut requests = Vec::new();
-                    let event_flags = subscription.event_types;
-
-                    if (event_flags & dxfeed::DXF_ET_QUOTE) != 0 {
-                        requests.push(FeedSubscription {
-                            event_type: "Quote".to_string(),
-                            symbol: sym.0.clone(),
-                            from_time: None,
-                            source: None,
-                        });
-                    }
-
-                    if (event_flags & dxfeed::DXF_ET_TRADE) != 0 {
-                        requests.push(FeedSubscription {
-                            event_type: "Trade".to_string(),
-                            symbol: sym.0.clone(),
-                            from_time: None,
-                            source: None,
-                        });
-                    }
-
-                    if (event_flags & dxfeed::DXF_ET_GREEKS) != 0 {
-                        requests.push(FeedSubscription {
-                            event_type: "Greeks".to_string(),
-                            symbol: sym.0.clone(),
-                            from_time: None,
-                            source: None,
-                        });
-                    }
-
-                    requests
-                })
-                .collect::<Vec<FeedSubscription>>();
-
-            // Execute unsubscribe via command channel
-            if let (Some(tx), Some(channel_id)) = (&self.dxlink_command_tx, self.channel_id) {
-                let tx_clone = tx.clone();
-                let channel = channel_id;
-                let requests = unsubscribe_requests.clone();
-                let sub_id = id.0;
-
-                tokio::spawn(async move {
-                    // Unregister the event sender
-                    if let Err(e) = tx_clone
-                        .send(DXLinkCommand::RemoveEventSender(sub_id as u32))
-                        .await
-                    {
-                        error!("Error unregistering event sender: {}", e);
-                    }
-
-                    // Unsubscribe from symbols
-                    if !requests.is_empty()
-                        && let Err(e) = tx_clone
-                            .send(DXLinkCommand::Unsubscribe(channel, requests))
-                            .await
-                    {
-                        error!("Error sending unsubscribe command: {}", e);
-                    }
-                });
-            }
         }
-
-        // Remove subscription from map
-        self.subscription_map.remove(&id);
     }
 
-    pub fn subscribe(&self, _symbol: &[&str]) {
-        // This method is deprecated - use QuoteSubscription::add_symbols() instead
-        warn!(
-            "QuoteStreamer::subscribe() is deprecated. Use QuoteSubscription::add_symbols() instead."
-        );
+    /// Close and remove subscription by id.
+    pub fn close_sub(&mut self, subscription: QuoteSubscription) {
+        // Prepare unsubscribe requests
+        let unsubscribe_requests = subscription
+            .symbols
+            .iter()
+            .flat_map(|sym| {
+                let mut requests = Vec::new();
+                let event_flags = subscription.event_types;
+
+                if (event_flags & dxfeed::DXF_ET_QUOTE) != 0 {
+                    requests.push(FeedSubscription {
+                        event_type: "Quote".to_string(),
+                        symbol: sym.0.clone(),
+                        from_time: None,
+                        source: None,
+                    });
+                }
+
+                if (event_flags & dxfeed::DXF_ET_TRADE) != 0 {
+                    requests.push(FeedSubscription {
+                        event_type: "Trade".to_string(),
+                        symbol: sym.0.clone(),
+                        from_time: None,
+                        source: None,
+                    });
+                }
+
+                if (event_flags & dxfeed::DXF_ET_GREEKS) != 0 {
+                    requests.push(FeedSubscription {
+                        event_type: "Greeks".to_string(),
+                        symbol: sym.0.clone(),
+                        from_time: None,
+                        source: None,
+                    });
+                }
+
+                requests
+            })
+            .collect::<Vec<FeedSubscription>>();
+
+        // Execute unsubscribe via command channel
+        if let (Some(tx), Some(channel_id)) = (&self.dxlink_command_tx, self.channel_id) {
+            let tx_clone = tx.clone();
+            let channel = channel_id;
+
+            tokio::spawn(async move {
+                // Unregister the event sender
+                if let Err(e) = tx_clone
+                    .send(DXLinkCommand::RemoveEventSender(
+                        subscription.id,
+                        subscription.symbols,
+                    ))
+                    .await
+                {
+                    error!("Error unregistering event sender: {}", e);
+                }
+
+                // Unsubscribe from symbols
+                if !unsubscribe_requests.is_empty()
+                    && let Err(e) = tx_clone
+                        .send(DXLinkCommand::Unsubscribe(channel, unsubscribe_requests))
+                        .await
+                {
+                    error!("Error sending unsubscribe command: {}", e);
+                }
+            });
+        }
     }
 
-    pub async fn get_event(&self) -> std::result::Result<dxfeed::Event, flume::RecvError> {
-        // This method is deprecated - use QuoteSubscription::get_event() instead
-        // Return an error indicating this method should not be used
-        Err(flume::RecvError::Disconnected)
-    }
-}
-
-// Implement Clone for QuoteStreamer to support Arc<Mutex<Self>>
-impl Clone for QuoteStreamer {
-    fn clone(&self) -> Self {
-        Self {
-            channel_id: self.channel_id,
-            event_senders: self.event_senders.clone(),
-            next_sub_id: self.next_sub_id,
-            subscription_map: HashMap::new(), // Create a new empty map
-            dxlink_command_tx: self.dxlink_command_tx.clone(),
+    pub async fn shutdown(&mut self) {
+        // Send disconnect command to DXLink client
+        if let Some(tx) = &self.dxlink_command_tx
+            && let Err(e) = tx.send(DXLinkCommand::Disconnect).await
+        {
+            warn!("Error sending disconnect command: {}", e);
         }
     }
 }
 
 impl Drop for QuoteStreamer {
     fn drop(&mut self) {
-        // Clean up all subscriptions
-        let subs_to_close: Vec<SubscriptionId> = self.subscription_map.keys().cloned().collect();
-        for id in subs_to_close {
-            self.close_sub(id);
-        }
-
-        // Signal disconnection
-        if let Some(tx) = &self.dxlink_command_tx {
-            let tx_clone = tx.clone();
-
-            tokio::spawn(async move {
-                if let Err(e) = tx_clone.send(DXLinkCommand::Disconnect).await {
-                    warn!("Error sending disconnect command: {}", e);
-                }
-            });
+        // Send disconnect command to DXLink client
+        if let Some(tx) = &self.dxlink_command_tx
+            && let Err(e) = tx.try_send(DXLinkCommand::Disconnect)
+        {
+            warn!("Error sending disconnect command: {}", e);
         }
     }
 }

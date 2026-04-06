@@ -27,7 +27,7 @@ static INIT: Once = Once::new();
 
 /// Sets up a logger for the application for platforms other than `wasm32`.
 ///
-/// The logger level is determined by the `LOGLEVEL` environment variable.
+/// The logger level is determined by the `LOG_LEVEL` environment variable.
 /// Supported log levels are:
 /// - `DEBUG`: Captures detailed debug information.
 /// - `ERROR`: Captures error messages.
@@ -44,7 +44,7 @@ static INIT: Once = Once::new();
 pub fn setup_logger() {
     #[cfg(not(target_arch = "wasm32"))]
     INIT.call_once(|| {
-        let log_level = env::var("LOGLEVEL")
+        let log_level = env::var("LOG_LEVEL")
             .unwrap_or_else(|_| "INFO".to_string())
             .to_uppercase();
 
@@ -107,7 +107,7 @@ mod tests_setup_logger {
     #[test]
     fn test_logger_initialization_info() {
         unsafe {
-            env::set_var("LOGLEVEL", "INFO");
+            env::set_var("LOG_LEVEL", "INFO");
         }
         setup_logger();
 
@@ -120,7 +120,7 @@ mod tests_setup_logger {
     #[test]
     fn test_logger_initialization_debug() {
         unsafe {
-            env::set_var("LOGLEVEL", "DEBUG");
+            env::set_var("LOG_LEVEL", "DEBUG");
         }
         setup_logger();
 
@@ -133,7 +133,7 @@ mod tests_setup_logger {
     #[test]
     fn test_logger_initialization_default() {
         unsafe {
-            env::remove_var("LOGLEVEL");
+            env::remove_var("LOG_LEVEL");
         }
         setup_logger();
 
@@ -146,7 +146,7 @@ mod tests_setup_logger {
     #[test]
     fn test_logger_called_once() {
         unsafe {
-            env::set_var("LOGLEVEL", "INFO");
+            env::set_var("LOG_LEVEL", "INFO");
         }
 
         setup_logger(); // First call should set up the logger
@@ -202,7 +202,7 @@ mod tests_setup_logger_bis {
     fn test_default_log_level() {
         let _lock = TEST_MUTEX.lock().unwrap();
         unsafe {
-            env::remove_var("LOGLEVEL");
+            env::remove_var("LOG_LEVEL");
         }
 
         let (layer, level) = create_test_layer();
@@ -220,7 +220,7 @@ mod tests_setup_logger_bis {
     fn test_debug_log_level() {
         let _lock = TEST_MUTEX.lock().unwrap();
         unsafe {
-            env::set_var("LOGLEVEL", "DEBUG");
+            env::set_var("LOG_LEVEL", "DEBUG");
         }
 
         let (layer, level) = create_test_layer();
@@ -233,7 +233,7 @@ mod tests_setup_logger_bis {
 
         assert_eq!(*level.lock().unwrap(), Some(Level::DEBUG));
         unsafe {
-            env::remove_var("LOGLEVEL");
+            env::remove_var("LOG_LEVEL");
         }
     }
 
@@ -241,7 +241,7 @@ mod tests_setup_logger_bis {
     fn test_error_log_level() {
         let _lock = TEST_MUTEX.lock().unwrap();
         unsafe {
-            env::set_var("LOGLEVEL", "ERROR");
+            env::set_var("LOG_LEVEL", "ERROR");
         }
 
         let (layer, level) = create_test_layer();
@@ -254,7 +254,7 @@ mod tests_setup_logger_bis {
 
         assert_eq!(*level.lock().unwrap(), Some(Level::ERROR));
         unsafe {
-            env::remove_var("LOGLEVEL");
+            env::remove_var("LOG_LEVEL");
         }
     }
 
@@ -262,7 +262,7 @@ mod tests_setup_logger_bis {
     fn test_warn_log_level() {
         let _lock = TEST_MUTEX.lock().unwrap();
         unsafe {
-            env::set_var("LOGLEVEL", "WARN");
+            env::set_var("LOG_LEVEL", "WARN");
         }
         let (layer, level) = create_test_layer();
         let subscriber = tracing_subscriber::registry().with(layer);
@@ -274,7 +274,7 @@ mod tests_setup_logger_bis {
 
         assert_eq!(*level.lock().unwrap(), Some(Level::WARN));
         unsafe {
-            env::remove_var("LOGLEVEL");
+            env::remove_var("LOG_LEVEL");
         }
     }
 
@@ -282,7 +282,7 @@ mod tests_setup_logger_bis {
     fn test_trace_log_level() {
         let _lock = TEST_MUTEX.lock().unwrap();
         unsafe {
-            env::set_var("LOGLEVEL", "TRACE");
+            env::set_var("LOG_LEVEL", "TRACE");
         }
 
         let (layer, level) = create_test_layer();
@@ -296,7 +296,7 @@ mod tests_setup_logger_bis {
         assert_eq!(*level.lock().unwrap(), Some(Level::TRACE));
 
         unsafe {
-            env::remove_var("LOGLEVEL");
+            env::remove_var("LOG_LEVEL");
         }
     }
 
@@ -304,7 +304,7 @@ mod tests_setup_logger_bis {
     fn test_invalid_log_level() {
         let _lock = TEST_MUTEX.lock().unwrap();
         unsafe {
-            env::set_var("LOGLEVEL", "INVALID");
+            env::set_var("LOG_LEVEL", "INVALID");
         }
 
         let (layer, level) = create_test_layer();
@@ -317,7 +317,7 @@ mod tests_setup_logger_bis {
 
         assert_eq!(*level.lock().unwrap(), Some(Level::INFO));
         unsafe {
-            env::remove_var("LOGLEVEL");
+            env::remove_var("LOG_LEVEL");
         }
     }
 }

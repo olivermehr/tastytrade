@@ -16,16 +16,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_logger();
     let config = TastyTradeConfig::new();
 
-    // Check if credentials are configured
-    if !config.has_valid_credentials() {
-        error!("Error: Missing TastyTrade credentials!");
-        error!("Please make sure you have:");
-        error!("1. Copied .env.example to .env: cp .env.example .env");
-        error!("2. Set TASTYTRADE_USERNAME and TASTYTRADE_PASSWORD in .env");
-        error!("3. Set TASTYTRADE_USE_DEMO=true for sandbox testing");
-        std::process::exit(1);
-    }
-
     info!("Attempting to login with username: {}", config.client_id);
     info!("Using demo environment: {}", config.use_demo);
 

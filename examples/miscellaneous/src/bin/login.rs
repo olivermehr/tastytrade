@@ -1,4 +1,3 @@
-use std::env;
 use tastytrade::prelude::*;
 use tracing::info;
 
@@ -8,21 +7,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("TastyTrade Demo Login Example");
     info!("-----------------------------");
 
-    // Check if environment variables are set
-    if env::var("TASTYTRADE_CLIENT_ID").is_err()
-        || env::var("TASTYTRADE_CLIENT_SECRET").is_err()
-        || env::var("TASTYTRADE_REFRESH_TOKEN").is_err()
-    {
-        info!(
-            "Please set TASTYTRADE_CLIENT_ID, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN environment variables."
-        );
-        info!("Example:");
-        info!("  export TASTYTRADE_USERNAME=your_username");
-        info!("  export TASTYTRADE_PASSWORD=your_password");
-        info!("  export TASTYTRADE_USE_DEMO=true");
-        info!("  export LOGLEVEL=DEBUG");
-        std::process::exit(1);
-    }
 
     // Load configuration from environment variables
     let config = TastyTradeConfig::from_env();

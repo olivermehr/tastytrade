@@ -112,7 +112,6 @@ impl TastyTrade {
         base_url: &str,
     ) -> TastyResult<LoginResponse> {
         let client = reqwest::Client::default();
-
         let resp = client
             .post(format!("{base_url}/oauth/token"))
             .header(header::CONTENT_TYPE, "application/json")
