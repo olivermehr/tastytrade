@@ -113,7 +113,7 @@ pub enum TimeInForce {
 /// from initial reception to final completion or cancellation.  The `serde`
 /// attributes provide custom renaming for certain variants to match the API
 /// specifications.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum OrderStatus {
     /// The order has been received.
     Received,
