@@ -142,4 +142,13 @@ impl Account<'_> {
             ))
             .await
     }
+
+    pub async fn get_order(&self, id: OrderId) -> TastyResult<LiveOrderRecord> {
+        self.tasty
+            .get(format!(
+                "/accounts/{}/orders/{}",
+                self.inner.account.account_number.0, id.0
+            ))
+            .await
+    }
 }
