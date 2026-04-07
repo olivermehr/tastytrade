@@ -489,7 +489,7 @@ pub struct Warning {}
 #[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct EditOrderRequest {
-    price: Decimal,
+    pub price: Decimal,
 }
 
 #[cfg(test)]
