@@ -202,6 +202,28 @@ impl TastyTrade {
         }
     }
 
+    pub async fn patch<R, P, U>(&self, url: U, payload: P) -> TastyResult<R>
+    where
+        R: DeserializeOwned + Serialize + std::fmt::Debug,
+        P: Serialize,
+        U: AsRef<str>,
+    {
+        let url = format!("{}{}", self.config.base_url, url.as_ref());
+        let result = self
+            .client
+            .patch(url)
+            .body(serde_json::to_string(&payload).unwrap())
+            .send()
+            .await?
+            .json::<TastyApiResponse<R>>()
+            .await?;
+
+        match result {
+            TastyApiResponse::Success(s) => Ok(s.data),
+            TastyApiResponse::Error { error } => Err(error.into()),
+        }
+    }
+
     pub async fn delete<R, U>(&self, url: U) -> TastyResult<R>
     where
         R: DeserializeOwned + Serialize + std::fmt::Debug,

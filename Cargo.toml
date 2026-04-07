@@ -46,6 +46,9 @@ pretty-simple-display = { workspace = true }
 [dev-dependencies]
 serial_test = "3.2"
 
+[patch.crates-io]
+dxlink = {path = "./forks/dxlink-0.1.5"}
+
 
 [[test]]
 name = "tests"
