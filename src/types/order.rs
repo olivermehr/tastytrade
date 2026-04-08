@@ -490,6 +490,7 @@ pub struct Warning {}
 #[serde(rename_all = "kebab-case")]
 pub struct EditOrderRequest {
     pub price: Decimal,
+    pub time_in_force: TimeInForce,
 }
 
 #[cfg(test)]
