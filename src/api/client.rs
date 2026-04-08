@@ -211,15 +211,29 @@ impl TastyTrade {
         let url = format!("{}{}", self.config.base_url, url.as_ref());
         let result = self
             .client
-            .patch(url)
+            .patch(&url)
             .body(serde_json::to_string(&payload).unwrap())
             .send()
-            .await?
-            .json::<TastyApiResponse<R>>()
             .await?;
-
+        if !result.status().is_success() {
+            return Err(crate::TastyTradeError::Unknown(format!(
+                "HTTP {} {} for request {}: {}",
+                result.status().as_u16(),
+                result.status().canonical_reason().unwrap_or("Unknown"),
+                &url,
+                result.text().await?
+            )));
+        }
+        let text = result.text().await?;
+        debug!("🔍 Full response for {}: {}", &url, text);
+        let result = serde_json::from_str::<TastyApiResponse<R>>(&text).map_err(|e| {
+            crate::TastyTradeError::Unknown(format!(
+                "Failed to parse JSON response for request {}: {}. Full response: {}",
+                url, e, text
+            ))
+        })?;
         match result {
-            TastyApiResponse::Success(s) => Ok(s.data),
+            TastyApiResponse::Success(s) => Ok(R::from_tasty(s)),
             TastyApiResponse::Error { error } => Err(error.into()),
         }
     }
