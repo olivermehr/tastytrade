@@ -486,13 +486,6 @@ pub struct FeeCalculation {
 #[serde(rename_all = "kebab-case")]
 pub struct Warning {}
 
-#[derive(DebugPretty, DisplaySimple, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct EditOrderRequest {
-    pub price: Decimal,
-    pub time_in_force: TimeInForce,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

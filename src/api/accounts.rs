@@ -1,6 +1,5 @@
 use super::base::{Items, Paginated};
 use crate::api::base::TastyResult;
-use crate::prelude::EditOrderRequest;
 use crate::types::balance::{Balance, BalanceSnapshot, SnapshotTimeOfDay};
 use crate::types::order::{DryRunResult, Order, OrderId, OrderPlacedResult};
 use crate::{FullPosition, LiveOrderRecord, TastyTrade};
@@ -150,22 +149,6 @@ impl Account<'_> {
                 "/accounts/{}/orders/{}",
                 self.inner.account.account_number.0, id.0
             ))
-            .await
-    }
-
-    pub async fn edit_order(
-        &self,
-        id: OrderId,
-        order: &EditOrderRequest,
-    ) -> TastyResult<LiveOrderRecord> {
-        self.tasty
-            .patch(
-                format!(
-                    "/accounts/{}/orders/{}",
-                    self.inner.account.account_number.0, id.0
-                ),
-                order,
-            )
             .await
     }
 }

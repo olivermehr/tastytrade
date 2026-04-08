@@ -32,9 +32,9 @@ pub use crate::api::accounts::{Account, AccountDetails, AccountInner, AccountNum
 
 // Re-export order types
 pub use crate::types::order::{
-    Action, AsSymbol, DryRunRecord, DryRunResult, EditOrderRequest, LiveOrderRecord, Order,
-    OrderBuilder, OrderId, OrderLeg, OrderLegBuilder, OrderPlacedResult, OrderStatus, OrderType,
-    PriceEffect, Symbol, TimeInForce,
+    Action, AsSymbol, DryRunRecord, DryRunResult, LiveOrderRecord, Order, OrderBuilder, OrderId,
+    OrderLeg, OrderLegBuilder, OrderPlacedResult, OrderStatus, OrderType, PriceEffect, Symbol,
+    TimeInForce,
 };
 
 // Re-export position types
